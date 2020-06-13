@@ -20,14 +20,47 @@ export default {
     MglMap
   },
   props: {
+
+    /**
+     * Expected trajectory data format:
+     * 
+     * {  name: name of the dataset (string), 
+     *    lat: starting point (float), 
+     *    lon: starting point (float), 
+     *    geojson: array of geojson objects, one for each trajectory (see below)  }
+     * 
+     * geojson = {
+     *      type: 'FeatureCollection',
+     *      features: [{              <- only one feature for each trajectory expected, accessed always as features[0]
+     *        type: 'Feature',
+     *        properties: {
+     *          name: '',             <- a string identifier
+     *          time: []              <- array of timestamps (millisec. since 1. 1. 1970)
+     *        },
+     *        geometry: {
+     *          coordinates: [],      <- array of coordiates corresponding to the timestamps, in the format [[lon, lat], ... ]
+     *          type: 'LineString'
+     *        },
+     *      }]
+     *    }
+     */
+
     trajectories: {
       required: true,
       default: null
     },
+
+    /**
+     * D3 color mapping function, see https://github.com/d3/d3-scale-chromatic (use the d3.interpolate* functions)
+     */
     colorMap: {
       type: Function,
       required: true 
     },
+
+    /**
+     * URL to the color map image, such as https://raw.githubusercontent.com/d3/d3-scale-chromatic/master/img/RdYlGn.png
+     */
     colorMapImg: {
       type: String,
       required: true
@@ -62,12 +95,11 @@ export default {
       //this.$options.map.on('click', 'line', );
     },
 
-    // add mouse interaction event to show tooltip
+    // mouse interaction event to show tooltip
     lineClicked(trajectories, e) {
 
       // find the segment on which the clicked point lies
       let lambda = -1, segment = -1;
-      //let min_1 = Number.MAX_VALUE, min_2 = Number.MAX_VALUE;
       let l = Number.parseInt(e.features[0].source.slice(4));
 
       let times = trajectories.geojson[l].features[0].properties.time;
@@ -103,22 +135,6 @@ export default {
         segment = min_idx+1;
       }
 
-      /*trajectories.geojson[l].features[0].geometry.coordinates.forEach((lngLat) => {
-        let dist = e.lngLat.distanceTo(new this.mapbox.LngLat(lngLat[0], lngLat[1]));
-
-        if (dist < min_1) {
-          min_2 = min_1;
-          idx_2 = idx_1;
-          min_1 = dist;
-          idx_1 = idx;
-        } else if (dist < min_2) {
-          min_2 = dist;
-          idx_2 = idx;
-        }
-
-        idx++;
-      });*/
-
       // interpolate time
       let time_interpolated = Math.round(times[segment-1] * lambda + times[segment] * (1 - lambda));
 
@@ -134,34 +150,9 @@ export default {
               .addTo(this.$options.map);
     },
 
-    /*getGCD(arr) {
-      if (arr.length == 0) return 0;
-
-      var factors = [];
-
-      arr.forEach((num) => {
-        let fac = Array.from(Array(num), (_, i) => i);
-        fac = fac.filter(i => num % i === 0);
-        factors.push(fac);
-      });
-
-      let result = factors[0].filter((i) => {
-        var isCD = true;
-        
-        factors.forEach((f) => {
-          isCD = isCD && f.includes(i);
-        });
-
-        return isCD;
-      });
-
-      if (result.length > 0) {
-        return Math.max(result);
-      } else {
-        return 1;
-      }
-    },*/
-
+    /**
+     * Checks if two line segments are intersecting and if so, returns a structure of additional elements for the line segment algorithm
+     */
     checkIntersection(seg1, seg2) {
 
       let a = seg1.start;
@@ -176,6 +167,7 @@ export default {
       let lambda = ((b.x - d.x) * (c.y - d.y) + d.y * (c.x - d.x) - b.y * (c.x - d.x)) / denom;
       let mu = (lambda * (a.x - b.x) + b.x - d.x) / (c.x - d.x);
 
+      // this skips cases where the intersecting point is an endpoint of one fo the segments
       if (lambda <= 0.00001 || lambda >= 0.99999  || mu <= 0.00001 || mu >= 0.99999 ) {
         return null;
       }
@@ -240,6 +232,16 @@ export default {
       };
     },
 
+    /**
+     * Returns an array of intersection points computed using the sweep line algorithm.
+     * Each intersection point contains: 
+     * 
+     * x - longitude
+     * y - latitude
+     * intersecting - a string containing ids of the two segments that are intersecting, separated by '+'
+     * lambda - position in the first segment (between 0 and 1)
+     * mu - position in the second segment (between 0 and 1)  
+     */
     getSegmentIntersections() {
       var points = [];
       //var segments = [];
@@ -311,7 +313,9 @@ export default {
         }
       });
 
-      /*let s1 = {
+      /*
+      just some testing data for debugging, I'll leave those here
+      let s1 = {
         start: null,
         end: null,
         id: 's1'
@@ -580,40 +584,12 @@ export default {
       //this.$options.intersectionLayer.setGeoJSON(geojson);
     },
 
+    /**
+     * Run this every time the data change
+     */
     dataChanged() {
 
       if (Object.prototype.hasOwnProperty.call(this.$options, 'map')) {
-
-        // interpolate coordinates so that they have equal amount of time between them (ok maybe not)
-        /*this.trajectories.geojson.features.forEach((feature) => {
-          let timeSegments = [];
-          for (let i=1; i < feature.properties.time.length; i++) {
-            timeSegments.push(feature.properties.time[i] - feature.properties.time[i-1]);
-          }
-
-          let gcd = Math.max(this.getGCD(timeSegments), 1000);
-
-          let coordsOrig = feature.geometry.coordinates;
-          let timesOrig = feature.properties.time;
-
-          feature.geometry.coordinates = [];
-          feature.properties.time = [];
-
-          for (let i=1; i < coordsOrig.length; i++) {
-            for (let j=0; j < timeSegments[i-1]; j += gcd) {
-              // interpolate new coords
-              let t = j / timeSegments[i-1];
-
-              let newLon = t * coordsOrig[i][0] + (1-t) * coordsOrig[i-1][0];
-              let newLat = t * coordsOrig[i][1] + (1-t) * coordsOrig[i-1][1];
-              let newTime = t * timesOrig[i] + (1-t) * timesOrig[i-1];
-
-              feature.geometry.coordinates.push([newLon, newLat]);
-              feature.properties.time.push(newTime);
-            }
-          }
-
-        });*/
 
         // get minimum and maximum time of all the trajectories
         let mins = [], maxes = [];
@@ -669,8 +645,6 @@ export default {
 
           // set up the color interpolation 
           var lineGradient = [ 'interpolate', ['linear'], ['line-progress']];
-          //var tMin = this.trajectories.geojson[l].features[0].properties.time[0];
-          //var tMax = this.trajectories.geojson[l].features[0].properties.time[this.trajectories.geojson[l].features[0].properties.time.length - 1];
           var prevT1 = 0, prevT2 = 0;
 
           // count lengths of segments and the total distance
@@ -754,10 +728,6 @@ export default {
   created() {
     // We need to set mapbox-gl library here in order to use it in template
     this.mapbox = Mapbox;
-  },
-
-  mounted() {
-    //alert("baf");
   }
 };
 </script>
