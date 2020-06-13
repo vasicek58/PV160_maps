@@ -38,7 +38,7 @@ export default {
      *          time: []              <- array of timestamps (millisec. since 1. 1. 1970)
      *        },
      *        geometry: {
-     *          coordinates: [],      <- array of coordiates corresponding to the timestamps, in the format [[lon, lat], ... ]
+     *          coordinates: [],      <- array of coordiates corresponding to the timestamps, in the format [[lon, lat], ... ], e.g. [[116.291322,40.020575], ...]
      *          type: 'LineString'
      *        },
      *      }]
